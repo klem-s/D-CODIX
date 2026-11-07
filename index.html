@@ -23,9 +23,19 @@
       <span id="puzzle-no">Défi du jour · #—</span>
       <span id="puzzle-date">—</span>
       <span id="timer" class="timer" hidden></span>
+      <button id="btn-history" class="history-btn" type="button" aria-label="Historique du défi du jour" aria-expanded="false" hidden>📅</button>
     </div>
     <h1>DÉCODIX</h1>
     <p class="sub">Un code à 5 chiffres se cache dans le coffre. Chaque essai révèle la position des chiffres — et deux indices globaux de déduction.</p>
+
+    <div class="history-panel" id="history-panel" hidden>
+      <div class="history-legend">
+        <span><span class="hdot ok"></span>Gagné</span>
+        <span><span class="hdot lose"></span>Perdu</span>
+        <span><span class="hdot empty"></span>Non joué</span>
+      </div>
+      <div class="history-grid" id="history-grid"></div>
+    </div>
 
     <div class="tabs" role="tablist" aria-label="Mode de jeu">
       <button class="tab" id="tab-daily" role="tab" aria-selected="true" type="button">Défi du jour</button>

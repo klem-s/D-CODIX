@@ -14,6 +14,7 @@
   var STORAGE_QUICK_STATS = "decodix_quick_stats_v1";
   var STORAGE_QUICK_SETTINGS = "decodix_quick_settings_v1";
   var STORAGE_BADGES = "decodix_badges_v1";
+  var STORAGE_HISTORY = "decodix_history_v1";
   var BADGE_THRESHOLDS = [3, 7, 14, 30, 100];
 
   var reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -205,6 +206,17 @@
     try { localStorage.setItem(STORAGE_QUICK_SETTINGS, JSON.stringify(settings)); } catch (e) {}
   }
 
+  function getHistory() {
+    try { return JSON.parse(localStorage.getItem(STORAGE_HISTORY) || "null") || {}; }
+    catch (e) { return {}; }
+  }
+
+  function recordHistory(dateStr, status) {
+    var hist = getHistory();
+    hist[dateStr] = status;
+    try { localStorage.setItem(STORAGE_HISTORY, JSON.stringify(hist)); } catch (e) {}
+  }
+
   function newQuickState() {
     var cfg = getQuickSettings();
     var state = freshState(makeSecret(Math.random, cfg.codeLength, cfg.allowRepeats), cfg.codeLength, cfg.maxAttempts);
@@ -335,6 +347,9 @@
   var setTimeLimitRow = document.getElementById("set-timelimit-row");
   var setApplyEl = document.getElementById("set-apply");
   var timerEl = document.getElementById("timer");
+  var btnHistory = document.getElementById("btn-history");
+  var historyPanelEl = document.getElementById("history-panel");
+  var historyGridEl = document.getElementById("history-grid");
 
   function activeState() {
     if (currentMode === "daily") return dailyState;
@@ -726,6 +741,8 @@
     tabDuel.setAttribute("aria-selected", String(mode === "duel"));
     btnSettings.hidden = mode !== "quick";
     if (mode !== "quick") closeSettingsPanel();
+    btnHistory.hidden = mode !== "daily";
+    if (mode !== "daily") { historyPanelEl.hidden = true; btnHistory.setAttribute("aria-expanded", "false"); }
     updateHeader();
     var state = activeState();
     (state.status === "playing") ? unlockKeypad() : lockKeypad();
@@ -835,6 +852,55 @@
 
   setInterval(tickTimer, 1000);
 
+  // ---------- historique du défi du jour ----------
+
+  function renderHistoryGrid() {
+    var hist = getHistory();
+    var todayStr = todayUTCString();
+    var todayMs = new Date(todayStr + "T00:00:00Z").getTime();
+    var spanDays = 70; // 10 semaines
+    var startMs = todayMs - (spanDays - 1) * 86400000;
+    var startDow = (new Date(startMs).getUTCDay() + 6) % 7; // 0 = lundi
+    startMs -= startDow * 86400000;
+    var totalCells = Math.ceil((Math.round((todayMs - startMs) / 86400000) + 1) / 7) * 7;
+
+    historyGridEl.innerHTML = "";
+    ["L", "M", "M", "J", "V", "S", "D"].forEach(function (l) {
+      var lab = document.createElement("div");
+      lab.className = "hlabel";
+      lab.textContent = l;
+      historyGridEl.appendChild(lab);
+    });
+    for (var i = 0; i < totalCells; i++) {
+      var cellMs = startMs + i * 86400000;
+      var cell = document.createElement("div");
+      cell.className = "hcell";
+      if (cellMs > todayMs) {
+        cell.classList.add("empty");
+      } else {
+        var dateStr = new Date(cellMs).toISOString().slice(0, 10);
+        var status = hist[dateStr];
+        if (status) cell.classList.add(status === "won" ? "ok" : "lose");
+        if (dateStr === todayStr) cell.classList.add("today");
+        cell.title = dateStr + (status ? (status === "won" ? " — gagné" : " — perdu") : " — non joué");
+      }
+      historyGridEl.appendChild(cell);
+    }
+  }
+
+  function toggleHistoryPanel() {
+    if (historyPanelEl.hidden) {
+      renderHistoryGrid();
+      historyPanelEl.hidden = false;
+      btnHistory.setAttribute("aria-expanded", "true");
+    } else {
+      historyPanelEl.hidden = true;
+      btnHistory.setAttribute("aria-expanded", "false");
+    }
+  }
+
+  btnHistory.addEventListener("click", toggleHistoryPanel);
+
   // ---------- saisie ----------
 
   function submitGuess() {
@@ -852,12 +918,14 @@
     state.current = [];
     if (won(feedback)) {
       state.status = "won";
-      if (currentMode === "daily") updateStreakOnWin(state.date);
+      if (currentMode === "daily") { updateStreakOnWin(state.date); recordHistory(state.date, "won"); }
     } else if (state.guesses.length >= state.maxAttempts) {
       state.status = "lost";
+      if (currentMode === "daily") recordHistory(state.date, "lost");
     }
     announce(buildGuessAnnouncement(state.guesses.length, feedback, meta));
     if (currentMode === "quick" && state.status !== "playing") updateQuickStatsOnEnd(state);
+    if (!historyPanelEl.hidden) renderHistoryGrid();
     persistCurrentMode();
     lockKeypad();
     renderBoard(state, true);
@@ -954,6 +1022,7 @@
   tabQuick.setAttribute("aria-selected", String(startMode === "quick"));
   tabDuel.setAttribute("aria-selected", String(startMode === "duel"));
   btnSettings.hidden = startMode !== "quick";
+  btnHistory.hidden = startMode !== "daily";
   updateHeader();
   var startState = activeState();
   renderBoard(startState, false);
