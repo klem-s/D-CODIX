@@ -17,6 +17,7 @@
     <span class="screws bl" aria-hidden="true"></span><span class="screws br" aria-hidden="true"></span>
 
     <div id="badge-toast" class="badge-toast" role="status" aria-live="polite"></div>
+    <div id="sr-announcer" class="sr-only" aria-live="polite" aria-atomic="true"></div>
 
     <div class="eyebrow">
       <span id="puzzle-no">Défi du jour · #—</span>
@@ -31,9 +32,9 @@
     </div>
 
     <div class="legend">
-      <span><span class="led ok"></span>Bien placé</span>
-      <span><span class="led warn"></span>Présent, mal placé</span>
-      <span><span class="led absent"></span>Absent</span>
+      <span><span class="led ok"></span>Bien placé ✓</span>
+      <span><span class="led warn"></span>Présent, mal placé ◆</span>
+      <span><span class="led absent"></span>Absent –</span>
       <span><span class="led accent"></span>Σ / parité / écart / doublons</span>
     </div>
 
@@ -43,7 +44,7 @@
       <button data-digit="1">1</button><button data-digit="2">2</button><button data-digit="3">3</button>
       <button data-digit="4">4</button><button data-digit="5">5</button><button data-digit="6">6</button>
       <button data-digit="7">7</button><button data-digit="8">8</button><button data-digit="9">9</button>
-      <button class="wide" id="btn-back" type="button">Effacer</button>
+      <button class="wide" id="btn-back" type="button" title="Effacer un chiffre — double-clic ou appui long : tout effacer">Effacer</button>
       <button data-digit="0">0</button>
       <button class="wide accent" id="btn-submit" type="button">Valider</button>
     </div>

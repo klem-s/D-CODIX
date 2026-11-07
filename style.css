@@ -31,6 +31,15 @@ body{
   *{ animation-duration:.001ms !important; transition-duration:.001ms !important; }
 }
 
+.sr-only{
+  position:absolute;
+  width:1px;
+  height:1px;
+  overflow:hidden;
+  clip:rect(0,0,0,0);
+  white-space:nowrap;
+}
+
 .stage{
   width:100%;
   max-width:420px;
@@ -146,6 +155,7 @@ h1{
   justify-content:center;
   transform:rotateX(0deg);
   transition:transform .3s cubic-bezier(.5,0,.5,1), border-color .2s, box-shadow .2s;
+  position:relative;
 }
 .slot.flip{ transform:rotateX(92deg); }
 .slot[data-state="ok"]{ border-color:var(--ok); box-shadow:0 0 10px -2px var(--ok), inset 0 0 14px var(--ok-dim); }
@@ -154,6 +164,27 @@ h1{
 .slot[data-state="typed"]{ border-color:var(--accent); }
 .slot[data-state="cursor"]{ border-color:var(--muted); animation:blink 1.1s step-start infinite; }
 @keyframes blink{ 50%{ border-color:var(--bezel); } }
+/* double-codage couleur + symbole (accessibilité daltonisme) */
+.slot[data-state="ok"]::after,
+.slot[data-state="warn"]::after,
+.slot[data-state="absent"]::after{
+  position:absolute;
+  top:2px;
+  right:4px;
+  font-size:9px;
+  line-height:1;
+  pointer-events:none;
+}
+.slot[data-state="ok"]::after{ content:"✓"; color:var(--ok); }
+.slot[data-state="warn"]::after{ content:"◆"; color:var(--warn); }
+.slot[data-state="absent"]::after{ content:"–"; color:var(--absent); opacity:.8; }
+@keyframes shake-row{
+  10%,90%{ transform:translateX(-1px); }
+  20%,80%{ transform:translateX(2px); }
+  30%,50%,70%{ transform:translateX(-4px); }
+  40%,60%{ transform:translateX(4px); }
+}
+.digits.shake{ animation:shake-row .4s linear; }
 .slot-val{
   font-family:'VT323',monospace;
   font-size:26px;
@@ -208,6 +239,7 @@ h1{
   padding:12px 0;
   cursor:pointer;
   transition:border-color .15s, color .15s, opacity .15s;
+  position:relative;
 }
 .keypad button:hover:not(:disabled){ border-color:var(--muted); }
 .keypad button:focus-visible{ outline:2px solid var(--accent); outline-offset:2px; }
@@ -217,6 +249,18 @@ h1{
 .keypad button[data-state="ok"]{ border-color:var(--ok); color:var(--ok); background:var(--ok-dim); }
 .keypad button[data-state="warn"]{ border-color:var(--warn); color:var(--warn); background:var(--warn-dim); }
 .keypad button[data-state="absent"]{ border-color:var(--bezel); color:var(--muted); opacity:.5; }
+/* double-codage couleur + symbole, cohérent avec les tuiles du plateau */
+.keypad button[data-state]::after{
+  position:absolute;
+  top:3px;
+  right:5px;
+  font-size:8px;
+  line-height:1;
+  pointer-events:none;
+}
+.keypad button[data-state="ok"]::after{ content:"✓"; color:var(--ok); }
+.keypad button[data-state="warn"]::after{ content:"◆"; color:var(--warn); }
+.keypad button[data-state="absent"]::after{ content:"–"; color:var(--muted); }
 
 .readout{
   margin-top:16px;
@@ -264,13 +308,14 @@ h1{
   opacity:0;
   transform:scale(.6);
   transition:opacity .3s ease, transform .5s cubic-bezier(.34,1.56,.64,1);
-  white-space:nowrap;
+  white-space:normal;
 }
 .status.shown{ opacity:1; transform:scale(1); }
 .status.win{ color:var(--ok); text-shadow:0 0 12px rgba(57,224,122,.6); }
 .status.win::before{ content:"\1F513 "; }
 .status.lose{ color:var(--danger); text-shadow:0 0 12px rgba(232,87,79,.5); }
 .status.lose::before{ content:"\1F512 "; }
+.status.hint{ color:var(--muted); text-shadow:none; font-size:12.5px; letter-spacing:.03em; }
 
 .actions{
   display:flex;

@@ -248,12 +248,15 @@
   var statusEl = document.getElementById("status");
   var actionsEl = document.getElementById("actions");
   var keypadEl = document.getElementById("keypad");
+  var btnBack = document.getElementById("btn-back");
   var puzzleNoEl = document.getElementById("puzzle-no");
   var puzzleDateEl = document.getElementById("puzzle-date");
   var tabDaily = document.getElementById("tab-daily");
   var tabQuick = document.getElementById("tab-quick");
   var badgeToastEl = document.getElementById("badge-toast");
   var badgeToastTimer = null;
+  var srAnnouncerEl = document.getElementById("sr-announcer");
+  var incompleteHintTimer = null;
 
   function activeState() { return currentMode === "daily" ? dailyState : quickState; }
 
@@ -382,12 +385,21 @@
     return known;
   }
 
+  function keypadAriaLabel(digit, s) {
+    if (s === "ok") return digit + ", bien placé dans le code";
+    if (s === "warn") return digit + ", présent dans le code";
+    if (s === "absent") return digit + ", absent du code";
+    return String(digit);
+  }
+
   function updateKeypadColors(state) {
     var known = digitKnowledge(state);
     Array.prototype.forEach.call(keypadEl.querySelectorAll("button[data-digit]"), function (btn) {
-      var s = known[Number(btn.dataset.digit)];
+      var digit = Number(btn.dataset.digit);
+      var s = known[digit];
       if (s) btn.dataset.state = s;
       else btn.removeAttribute("data-state");
+      btn.setAttribute("aria-label", keypadAriaLabel(digit, s));
     });
   }
 
@@ -398,14 +410,80 @@
     Array.prototype.forEach.call(keypadEl.querySelectorAll("button"), function (b) { b.disabled = false; });
   }
 
+  // ---------- accessibilité (lecteur d'écran + feedback de saisie) ----------
+
+  function announce(text) {
+    if (!srAnnouncerEl) return;
+    srAnnouncerEl.textContent = text;
+  }
+
+  var DIGIT_STATE_LABEL = { ok: "bien placé", warn: "présent mal placé", absent: "absent" };
+  var META_LABEL = { "Σ": "Somme", "PAR": "Parité", "ÉCA": "Écart", "DUP": "Doublons" };
+
+  function metaArrowLabel(arrow) {
+    return arrow === "=" ? "identique" : arrow === "↑" ? "cible plus haute" : "cible plus basse";
+  }
+
+  function buildGuessAnnouncement(attemptNo, feedback, meta) {
+    var digitsPart = feedback.map(function (s, i) {
+      return "chiffre " + (i + 1) + " " + DIGIT_STATE_LABEL[s];
+    }).join(", ");
+    var metaPart = meta.map(function (m) {
+      return (META_LABEL[m.tag] || m.tag) + " : " + metaArrowLabel(m.arrow);
+    }).join(". ");
+    return "Essai " + attemptNo + " : " + digitsPart + ". " + metaPart + ".";
+  }
+
+  function shakeActiveRow() {
+    var state = activeState();
+    var rows = boardEl.querySelectorAll(".row");
+    var row = rows[state.guesses.length];
+    if (!row) return;
+    var digitsEl = row.querySelector(".digits");
+    if (!digitsEl) return;
+    digitsEl.classList.remove("shake");
+    void digitsEl.offsetWidth; // force reflow pour pouvoir rejouer l'animation
+    digitsEl.classList.add("shake");
+  }
+
+  function showIncompleteHint() {
+    statusEl.classList.remove("win", "lose");
+    statusEl.textContent = "Code incomplet";
+    statusEl.classList.add("hint", "shown");
+    announce("Code incomplet.");
+    if (incompleteHintTimer) clearTimeout(incompleteHintTimer);
+    incompleteHintTimer = setTimeout(function () {
+      statusEl.classList.remove("hint", "shown");
+      statusEl.textContent = "";
+    }, 1500);
+  }
+
+  function bestOkCount(state) {
+    var best = 0;
+    state.guesses.forEach(function (guess) {
+      var feedback = evaluateGuess(guess, state.secret);
+      var okCount = feedback.filter(function (s) { return s === "ok"; }).length;
+      if (okCount > best) best = okCount;
+    });
+    return best;
+  }
+
+  function lossMessage(state) {
+    var best = bestOkCount(state);
+    if (best >= CODE_LENGTH - 1) return "Il ne manquait qu'un chiffre !";
+    if (best >= Math.ceil(CODE_LENGTH / 2)) return "Tu touchais presque au but !";
+    return "Pas facile, ce coffre... retente ta chance !";
+  }
+
   function refreshReadout() {
     var state = activeState();
     statusEl.className = "status";
+    if (incompleteHintTimer) { clearTimeout(incompleteHintTimer); incompleteHintTimer = null; }
     if (state.status === "won") {
       statusEl.textContent = "ACCÈS AUTORISÉ";
       statusEl.classList.add("win", "shown");
     } else if (state.status === "lost") {
-      statusEl.textContent = "COFFRE BLOQUÉ — " + state.secret.join("");
+      statusEl.textContent = lossMessage(state) + " — " + state.secret.join("");
       statusEl.classList.add("lose", "shown");
     } else {
       statusEl.classList.remove("shown");
@@ -526,9 +604,16 @@
 
   function submitGuess() {
     var state = activeState();
-    if (state.status !== "playing" || state.current.length !== CODE_LENGTH) return;
-    state.guesses.push(state.current.slice());
-    var feedback = evaluateGuess(state.current, state.secret);
+    if (state.status !== "playing") return;
+    if (state.current.length !== CODE_LENGTH) {
+      showIncompleteHint();
+      shakeActiveRow();
+      return;
+    }
+    var guessCopy = state.current.slice();
+    state.guesses.push(guessCopy);
+    var feedback = evaluateGuess(guessCopy, state.secret);
+    var meta = metaFor(guessCopy, state.secret);
     state.current = [];
     if (won(feedback)) {
       state.status = "won";
@@ -536,6 +621,7 @@
     } else if (state.guesses.length >= MAX_ATTEMPTS) {
       state.status = "lost";
     }
+    announce(buildGuessAnnouncement(state.guesses.length, feedback, meta));
     if (currentMode === "quick" && state.status !== "playing") updateQuickStatsOnEnd(state);
     persistCurrentMode();
     lockKeypad();
@@ -558,11 +644,49 @@
     renderBoard(state, false);
   }
 
+  // "Tout effacer" : pas de nouveau bouton (la grille 3 colonnes du pavé reste
+  // intacte) — un double-clic ou un appui long sur "Effacer" vide state.current
+  // en un seul geste ; un simple clic garde son comportement habituel (1 chiffre).
+  function pressClearAll() {
+    var state = activeState();
+    if (state.status !== "playing" || state.current.length === 0) return;
+    state.current = [];
+    persistCurrentMode();
+    renderBoard(state, false);
+    announce("Saisie effacée.");
+  }
+
+  var backLongPressTimer = null;
+  var backLongPressFired = false;
+  var BACK_LONG_PRESS_MS = 550;
+
+  function startBackLongPress() {
+    if (btnBack.disabled) return;
+    backLongPressFired = false;
+    clearTimeout(backLongPressTimer);
+    backLongPressTimer = setTimeout(function () {
+      backLongPressFired = true;
+      pressClearAll();
+    }, BACK_LONG_PRESS_MS);
+  }
+  function cancelBackLongPress() {
+    clearTimeout(backLongPressTimer);
+  }
+
+  btnBack.addEventListener("pointerdown", startBackLongPress);
+  btnBack.addEventListener("pointerup", cancelBackLongPress);
+  btnBack.addEventListener("pointerleave", cancelBackLongPress);
+  btnBack.addEventListener("pointercancel", cancelBackLongPress);
+  btnBack.addEventListener("dblclick", function () { pressClearAll(); });
+
   keypadEl.addEventListener("click", function (e) {
     var btn = e.target.closest("button");
     if (!btn || btn.disabled) return;
     if (btn.dataset.digit !== undefined) pressDigit(Number(btn.dataset.digit));
-    else if (btn.id === "btn-back") pressBackspace();
+    else if (btn.id === "btn-back") {
+      if (backLongPressFired) { backLongPressFired = false; return; }
+      pressBackspace();
+    }
     else if (btn.id === "btn-submit") submitGuess();
   });
 
