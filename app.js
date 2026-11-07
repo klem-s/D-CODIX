@@ -15,6 +15,7 @@
   var STORAGE_QUICK_SETTINGS = "decodix_quick_settings_v1";
   var STORAGE_BADGES = "decodix_badges_v1";
   var STORAGE_HISTORY = "decodix_history_v1";
+  var STORAGE_PREFS = "decodix_prefs_v1";
   var BADGE_THRESHOLDS = [3, 7, 14, 30, 100];
 
   var reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -103,6 +104,79 @@
   var META_COUNT = metaFor([0], [0]).length;
 
   function won(feedback) { return feedback.every(function (s) { return s === "ok"; }); }
+
+  // ---------- son & vibration ----------
+
+  function getPrefs() {
+    try {
+      return Object.assign({ sound: false, vibration: false }, JSON.parse(localStorage.getItem(STORAGE_PREFS) || "null") || {});
+    } catch (e) { return { sound: false, vibration: false }; }
+  }
+  function savePrefs(p) {
+    try { localStorage.setItem(STORAGE_PREFS, JSON.stringify(p)); } catch (e) {}
+  }
+
+  var prefs = getPrefs();
+  var audioCtx = null;
+
+  function ensureAudio() {
+    if (!audioCtx) {
+      var Ctx = window.AudioContext || window.webkitAudioContext;
+      if (Ctx) audioCtx = new Ctx();
+    }
+    if (audioCtx && audioCtx.state === "suspended") audioCtx.resume();
+    return audioCtx;
+  }
+
+  function playTone(freq, duration, type, gainPeak) {
+    if (!prefs.sound) return;
+    var ctx = ensureAudio();
+    if (!ctx) return;
+    var osc = ctx.createOscillator();
+    var gain = ctx.createGain();
+    osc.type = type || "sine";
+    osc.frequency.value = freq;
+    gain.gain.setValueAtTime(0, ctx.currentTime);
+    gain.gain.linearRampToValueAtTime(gainPeak || 0.14, ctx.currentTime + 0.01);
+    gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + duration);
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start();
+    osc.stop(ctx.currentTime + duration);
+  }
+
+  function playSequence(notes) {
+    if (!prefs.sound) return;
+    notes.forEach(function (n) {
+      setTimeout(function () { playTone(n.freq, n.duration, n.type, n.gain); }, n.delay || 0);
+    });
+  }
+
+  function vibrate(pattern) {
+    if (!prefs.vibration || !navigator.vibrate) return;
+    navigator.vibrate(pattern);
+  }
+
+  function sfxTap() { playTone(440, 0.05, "square", 0.05); vibrate(8); }
+  function sfxBackspace() { playTone(300, 0.05, "square", 0.04); }
+  function sfxError() { playTone(140, 0.18, "sawtooth", 0.1); vibrate([30, 40, 30]); }
+  function sfxGuess() { playTone(520, 0.1, "sine", 0.09); vibrate(15); }
+  function sfxWin() {
+    playSequence([
+      { freq: 523, duration: .12, type: "sine", delay: 0 },
+      { freq: 659, duration: .12, type: "sine", delay: 110 },
+      { freq: 784, duration: .22, type: "sine", delay: 220 }
+    ]);
+    vibrate([20, 40, 20, 40, 60]);
+  }
+  function sfxLose() { playTone(160, 0.4, "sawtooth", 0.1); vibrate([80, 40, 80]); }
+  function sfxBadge() {
+    playSequence([
+      { freq: 660, duration: .1, type: "triangle", delay: 0 },
+      { freq: 880, duration: .18, type: "triangle", delay: 100 }
+    ]);
+    vibrate([15, 30, 15]);
+  }
 
   // ---------- état ----------
 
@@ -356,6 +430,8 @@
   var btnHistory = document.getElementById("btn-history");
   var historyPanelEl = document.getElementById("history-panel");
   var historyGridEl = document.getElementById("history-grid");
+  var btnSound = document.getElementById("btn-sound");
+  var btnVibration = document.getElementById("btn-vibration");
 
   function activeState() {
     if (currentMode === "daily") return dailyState;
@@ -367,6 +443,7 @@
     if (!badgeToastEl) return;
     badgeToastEl.textContent = "🏅 Palier débloqué : " + threshold + " jours !";
     badgeToastEl.classList.add("shown");
+    sfxBadge();
     if (badgeToastTimer) clearTimeout(badgeToastTimer);
     badgeToastTimer = setTimeout(function () { badgeToastEl.classList.remove("shown"); }, 3200);
   }
@@ -471,8 +548,12 @@
   }
 
   function onRowRevealed() {
+    var status = activeState().status;
+    if (status === "won") sfxWin();
+    else if (status === "lost") sfxLose();
+    else sfxGuess();
     refreshReadout();
-    if (activeState().status === "playing") unlockKeypad();
+    if (status === "playing") unlockKeypad();
     else lockKeypad();
   }
 
@@ -555,6 +636,7 @@
     statusEl.textContent = "Code incomplet";
     statusEl.classList.add("hint", "shown");
     announce("Code incomplet.");
+    sfxError();
     if (incompleteHintTimer) clearTimeout(incompleteHintTimer);
     incompleteHintTimer = setTimeout(function () {
       statusEl.classList.remove("hint", "shown");
@@ -844,6 +926,7 @@
     if (remaining <= 0) {
       quickState.status = "lost";
       quickState.timedOut = true;
+      sfxLose();
       updateQuickStatsOnEnd(quickState);
       persistQuick();
       lockKeypad();
@@ -907,6 +990,34 @@
 
   btnHistory.addEventListener("click", toggleHistoryPanel);
 
+  // ---------- barre d'outils (son / vibration) ----------
+
+  function refreshToolbarButtons() {
+    btnSound.textContent = prefs.sound ? "🔊" : "🔇";
+    btnSound.setAttribute("aria-pressed", String(prefs.sound));
+    btnSound.setAttribute("aria-label", prefs.sound ? "Désactiver le son" : "Activer le son");
+    btnVibration.setAttribute("aria-pressed", String(prefs.vibration));
+    btnVibration.setAttribute("aria-label", prefs.vibration ? "Désactiver les vibrations" : "Activer les vibrations");
+  }
+
+  btnVibration.hidden = !("vibrate" in navigator);
+
+  btnSound.addEventListener("click", function () {
+    prefs.sound = !prefs.sound;
+    savePrefs(prefs);
+    refreshToolbarButtons();
+    if (prefs.sound) { ensureAudio(); playTone(523, 0.08, "sine", 0.12); }
+  });
+
+  btnVibration.addEventListener("click", function () {
+    prefs.vibration = !prefs.vibration;
+    savePrefs(prefs);
+    refreshToolbarButtons();
+    if (prefs.vibration) vibrate(20);
+  });
+
+  refreshToolbarButtons();
+
   // ---------- saisie ----------
 
   function submitGuess() {
@@ -941,6 +1052,7 @@
     var state = activeState();
     if (state.status !== "playing" || state.current.length >= state.codeLength) return;
     state.current.push(d);
+    sfxTap();
     persistCurrentMode();
     renderBoard(state, false);
   }
@@ -949,6 +1061,7 @@
     var state = activeState();
     if (state.status !== "playing") return;
     state.current.pop();
+    sfxBackspace();
     persistCurrentMode();
     renderBoard(state, false);
   }
@@ -960,6 +1073,7 @@
     var state = activeState();
     if (state.status !== "playing" || state.current.length === 0) return;
     state.current = [];
+    sfxBackspace();
     persistCurrentMode();
     renderBoard(state, false);
     announce("Saisie effacée.");
