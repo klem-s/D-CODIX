@@ -1,7 +1,7 @@
 (function () {
   "use strict";
 
-  var DAILY_CODE_LENGTH = 5;
+  var DAILY_CODE_LENGTH = 6;
   var DAILY_MAX_ATTEMPTS = 8;
   var CODE_LENGTH_MIN = 3, CODE_LENGTH_MAX = 7;
   var MAX_ATTEMPTS_MIN = 6, MAX_ATTEMPTS_MAX = 12;
@@ -120,7 +120,9 @@
     var secret = makeSecret(seededRng("decodix-" + dateStr), DAILY_CODE_LENGTH, true);
     var saved = null;
     try { saved = JSON.parse(localStorage.getItem(STORAGE_DAILY) || "null"); } catch (e) {}
-    if (saved && saved.date === dateStr) {
+    // saved.codeLength protège contre une partie du jour sauvegardée avant un changement
+    // de DAILY_CODE_LENGTH (sinon les essais déjà tapés auraient la mauvaise longueur).
+    if (saved && saved.date === dateStr && saved.codeLength === DAILY_CODE_LENGTH && saved.maxAttempts === DAILY_MAX_ATTEMPTS) {
       return {
         secret: secret, guesses: saved.guesses, current: saved.current || [], status: saved.status, date: dateStr,
         codeLength: DAILY_CODE_LENGTH, maxAttempts: DAILY_MAX_ATTEMPTS
@@ -135,7 +137,9 @@
         date: dailyState.date,
         guesses: dailyState.guesses,
         current: dailyState.current,
-        status: dailyState.status
+        status: dailyState.status,
+        codeLength: dailyState.codeLength,
+        maxAttempts: dailyState.maxAttempts
       }));
     } catch (e) {}
   }
@@ -270,12 +274,13 @@
     var secret = makeSecret(seededRng("decodix-duel-" + seed), DAILY_CODE_LENGTH, true);
     var saved = null;
     try { saved = JSON.parse(localStorage.getItem(duelStorageKey(seed)) || "null"); } catch (e) {}
+    var stale = saved && (saved.codeLength !== DAILY_CODE_LENGTH || saved.maxAttempts !== DAILY_MAX_ATTEMPTS);
     return {
       secret: secret, codeLength: DAILY_CODE_LENGTH, maxAttempts: DAILY_MAX_ATTEMPTS,
       seed: seed, from: fromName || null,
-      guesses: (saved && saved.guesses) || [],
-      current: (saved && saved.current) || [],
-      status: (saved && saved.status) || "playing"
+      guesses: (!stale && saved && saved.guesses) || [],
+      current: (!stale && saved && saved.current) || [],
+      status: (!stale && saved && saved.status) || "playing"
     };
   }
 
@@ -283,7 +288,8 @@
     if (!duelState) return;
     try {
       localStorage.setItem(duelStorageKey(duelState.seed), JSON.stringify({
-        guesses: duelState.guesses, current: duelState.current, status: duelState.status
+        guesses: duelState.guesses, current: duelState.current, status: duelState.status,
+        codeLength: duelState.codeLength, maxAttempts: duelState.maxAttempts
       }));
     } catch (e) {}
   }
