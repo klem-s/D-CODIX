@@ -214,6 +214,9 @@ h1{
 .keypad button:disabled{ opacity:.35; cursor:not-allowed; }
 .keypad button.wide{ grid-column:span 1; font-size:11px; }
 .keypad button.accent{ color:var(--ok); border-color:var(--ok); }
+.keypad button[data-state="ok"]{ border-color:var(--ok); color:var(--ok); background:var(--ok-dim); }
+.keypad button[data-state="warn"]{ border-color:var(--warn); color:var(--warn); background:var(--warn-dim); }
+.keypad button[data-state="absent"]{ border-color:var(--bezel); color:var(--muted); opacity:.5; }
 
 .readout{
   margin-top:16px;

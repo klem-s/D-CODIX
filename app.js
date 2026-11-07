@@ -246,11 +246,35 @@
       }
       boardEl.appendChild(refs.row);
     }
+    updateKeypadColors(state);
   }
 
   function onRowRevealed() {
     refreshReadout();
-    if (activeState().status !== "playing") lockKeypad();
+    if (activeState().status === "playing") unlockKeypad();
+    else lockKeypad();
+  }
+
+  function digitKnowledge(state) {
+    var rank = { absent: 1, warn: 2, ok: 3 };
+    var known = {};
+    state.guesses.forEach(function (guess) {
+      var feedback = evaluateGuess(guess, state.secret);
+      guess.forEach(function (d, i) {
+        var s = feedback[i];
+        if (!known[d] || rank[s] > rank[known[d]]) known[d] = s;
+      });
+    });
+    return known;
+  }
+
+  function updateKeypadColors(state) {
+    var known = digitKnowledge(state);
+    Array.prototype.forEach.call(keypadEl.querySelectorAll("button[data-digit]"), function (btn) {
+      var s = known[Number(btn.dataset.digit)];
+      if (s) btn.dataset.state = s;
+      else btn.removeAttribute("data-state");
+    });
   }
 
   function lockKeypad() {
