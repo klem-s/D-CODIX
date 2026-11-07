@@ -231,6 +231,31 @@ h1{
 }
 .stat{ font-size:11px; color:var(--muted); }
 .stat b{ color:var(--ink); }
+.badge-list{ color:var(--accent); cursor:help; }
+
+.badge-toast{
+  position:absolute;
+  top:10px;
+  left:50%;
+  z-index:5;
+  transform:translate(-50%,-10px);
+  background:var(--accent-dim);
+  border:1px solid var(--accent);
+  color:var(--accent);
+  font-size:11px;
+  letter-spacing:.02em;
+  padding:7px 14px;
+  border-radius:20px;
+  box-shadow:0 0 12px -2px var(--accent);
+  opacity:0;
+  pointer-events:none;
+  white-space:nowrap;
+  transition:opacity .3s ease, transform .3s ease;
+}
+.badge-toast.shown{
+  opacity:1;
+  transform:translate(-50%,0);
+}
 
 .status{
   font-family:'VT323',monospace;

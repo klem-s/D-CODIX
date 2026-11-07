@@ -6,6 +6,10 @@
   var EPOCH = Date.UTC(2026, 10, 7); // #1 le 2026-11-07 (UTC)
   var STORAGE_DAILY = "decodix_daily_v1";
   var STORAGE_STREAK = "decodix_streak_v1";
+  var STORAGE_QUICK = "decodix_quick_v1";
+  var STORAGE_QUICK_STATS = "decodix_quick_stats_v1";
+  var STORAGE_BADGES = "decodix_badges_v1";
+  var BADGE_THRESHOLDS = [3, 7, 14, 30, 100];
 
   var reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
@@ -99,7 +103,7 @@
     var saved = null;
     try { saved = JSON.parse(localStorage.getItem(STORAGE_DAILY) || "null"); } catch (e) {}
     if (saved && saved.date === dateStr) {
-      return { secret: secret, guesses: saved.guesses, current: [], status: saved.status, date: dateStr };
+      return { secret: secret, guesses: saved.guesses, current: saved.current || [], status: saved.status, date: dateStr };
     }
     return Object.assign(freshState(secret), { date: dateStr });
   }
@@ -109,14 +113,15 @@
       localStorage.setItem(STORAGE_DAILY, JSON.stringify({
         date: dailyState.date,
         guesses: dailyState.guesses,
+        current: dailyState.current,
         status: dailyState.status
       }));
     } catch (e) {}
   }
 
   function getStreak() {
-    try { return JSON.parse(localStorage.getItem(STORAGE_STREAK) || "null") || { streak: 0, lastWin: null }; }
-    catch (e) { return { streak: 0, lastWin: null }; }
+    try { return JSON.parse(localStorage.getItem(STORAGE_STREAK) || "null") || { streak: 0, lastWin: null, maxStreak: 0 }; }
+    catch (e) { return { streak: 0, lastWin: null, maxStreak: 0 }; }
   }
 
   function updateStreakOnWin(dateStr) {
@@ -129,12 +134,91 @@
       s.streak = 1;
     }
     s.lastWin = dateStr;
+    if (!s.maxStreak || s.streak > s.maxStreak) s.maxStreak = s.streak;
     try { localStorage.setItem(STORAGE_STREAK, JSON.stringify(s)); } catch (e) {}
+    checkBadges(s.streak);
     return s.streak;
+  }
+
+  function getBadges() {
+    try { return JSON.parse(localStorage.getItem(STORAGE_BADGES) || "null") || { unlocked: [] }; }
+    catch (e) { return { unlocked: [] }; }
+  }
+
+  function checkBadges(streak) {
+    var badges = getBadges();
+    var newlyUnlocked = [];
+    BADGE_THRESHOLDS.forEach(function (t) {
+      if (streak >= t && badges.unlocked.indexOf(t) === -1) {
+        badges.unlocked.push(t);
+        newlyUnlocked.push(t);
+      }
+    });
+    if (newlyUnlocked.length) {
+      try { localStorage.setItem(STORAGE_BADGES, JSON.stringify(badges)); } catch (e) {}
+      newlyUnlocked.forEach(function (t) { showBadgeToast(t); });
+    }
+    return badges;
   }
 
   function newQuickState() {
     return freshState(makeSecret(Math.random));
+  }
+
+  function loadQuick() {
+    var saved = null;
+    try { saved = JSON.parse(localStorage.getItem(STORAGE_QUICK) || "null"); } catch (e) {}
+    if (saved && Array.isArray(saved.secret) && saved.secret.length === CODE_LENGTH) {
+      return {
+        secret: saved.secret,
+        guesses: saved.guesses || [],
+        current: saved.current || [],
+        status: saved.status || "playing"
+      };
+    }
+    return newQuickState();
+  }
+
+  function persistQuick() {
+    try {
+      localStorage.setItem(STORAGE_QUICK, JSON.stringify({
+        secret: quickState.secret,
+        guesses: quickState.guesses,
+        current: quickState.current,
+        status: quickState.status
+      }));
+    } catch (e) {}
+  }
+
+  function persistCurrentMode() {
+    if (currentMode === "daily") persistDaily();
+    else persistQuick();
+  }
+
+  function getQuickStats() {
+    try {
+      return JSON.parse(localStorage.getItem(STORAGE_QUICK_STATS) || "null") || {
+        played: 0, wins: 0, totalWinAttempts: 0, bestAttempts: null, currentStreak: 0, bestStreak: 0
+      };
+    } catch (e) {
+      return { played: 0, wins: 0, totalWinAttempts: 0, bestAttempts: null, currentStreak: 0, bestStreak: 0 };
+    }
+  }
+
+  function updateQuickStatsOnEnd(state) {
+    var stats = getQuickStats();
+    stats.played += 1;
+    if (state.status === "won") {
+      stats.wins += 1;
+      stats.totalWinAttempts += state.guesses.length;
+      if (stats.bestAttempts === null || state.guesses.length < stats.bestAttempts) stats.bestAttempts = state.guesses.length;
+      stats.currentStreak += 1;
+      if (stats.currentStreak > stats.bestStreak) stats.bestStreak = stats.currentStreak;
+    } else {
+      stats.currentStreak = 0;
+    }
+    try { localStorage.setItem(STORAGE_QUICK_STATS, JSON.stringify(stats)); } catch (e) {}
+    return stats;
   }
 
   // ---------- rendu ----------
@@ -148,8 +232,18 @@
   var puzzleDateEl = document.getElementById("puzzle-date");
   var tabDaily = document.getElementById("tab-daily");
   var tabQuick = document.getElementById("tab-quick");
+  var badgeToastEl = document.getElementById("badge-toast");
+  var badgeToastTimer = null;
 
   function activeState() { return currentMode === "daily" ? dailyState : quickState; }
+
+  function showBadgeToast(threshold) {
+    if (!badgeToastEl) return;
+    badgeToastEl.textContent = "🏅 Palier débloqué : " + threshold + " jours !";
+    badgeToastEl.classList.add("shown");
+    if (badgeToastTimer) clearTimeout(badgeToastTimer);
+    badgeToastTimer = setTimeout(function () { badgeToastEl.classList.remove("shown"); }, 3200);
+  }
 
   function buildRow(idxLabel) {
     var row = document.createElement("div");
@@ -298,11 +392,24 @@
     }
 
     if (currentMode === "daily") {
-      var streak = getStreak().streak;
+      var streakInfo = getStreak();
+      var badges = getBadges();
+      var badgeHtml = "";
+      if (badges.unlocked.length) {
+        var sorted = badges.unlocked.slice().sort(function (a, b) { return a - b; });
+        badgeHtml = " <span class=\"badge-list\" title=\"Paliers débloqués : " + sorted.join(", ") + " jours\">🏅" + badges.unlocked.length + "</span>";
+      }
       statEl.innerHTML = "Essais : <b>" + state.guesses.length + "</b>/" + MAX_ATTEMPTS +
-        (streak > 0 ? " &nbsp;·&nbsp; Série : <b>" + streak + "</b> jour" + (streak > 1 ? "s" : "") + " 🔥" : "");
+        (streakInfo.streak > 0 ? " &nbsp;·&nbsp; Série : <b>" + streakInfo.streak + "</b> · Record : <b>" + (streakInfo.maxStreak || streakInfo.streak) + "</b> 🔥" + badgeHtml : "");
     } else {
-      statEl.innerHTML = "Essais : <b>" + state.guesses.length + "</b>/" + MAX_ATTEMPTS + " &nbsp;·&nbsp; mode rapide, sans classement";
+      var qStats = getQuickStats();
+      var winRate = qStats.played > 0 ? Math.round((qStats.wins / qStats.played) * 100) : 0;
+      var avgAttempts = qStats.wins > 0 ? (qStats.totalWinAttempts / qStats.wins).toFixed(1) : "—";
+      var best = qStats.bestAttempts === null ? "—" : qStats.bestAttempts;
+      statEl.innerHTML = "Essais : <b>" + state.guesses.length + "</b>/" + MAX_ATTEMPTS +
+        " &nbsp;·&nbsp; <b>" + qStats.played + "</b> partie" + (qStats.played === 1 ? "" : "s") +
+        " · <b>" + winRate + "%</b> victoires · moy <b>" + avgAttempts + "</b> · meilleure <b>" + best + "</b>" +
+        (qStats.currentStreak > 0 ? " &nbsp;·&nbsp; 🔥 <b>" + qStats.currentStreak + "</b> d'affilée" : "");
     }
 
     renderActions(state);
@@ -324,6 +431,7 @@
       newBtn.textContent = "Nouvelle partie";
       newBtn.addEventListener("click", function () {
         quickState = newQuickState();
+        persistQuick();
         unlockKeypad();
         renderBoard(quickState, false);
         refreshReadout();
@@ -388,7 +496,8 @@
     } else if (state.guesses.length >= MAX_ATTEMPTS) {
       state.status = "lost";
     }
-    if (currentMode === "daily") persistDaily();
+    if (currentMode === "quick" && state.status !== "playing") updateQuickStatsOnEnd(state);
+    persistCurrentMode();
     lockKeypad();
     renderBoard(state, true);
   }
@@ -397,6 +506,7 @@
     var state = activeState();
     if (state.status !== "playing" || state.current.length >= CODE_LENGTH) return;
     state.current.push(d);
+    persistCurrentMode();
     renderBoard(state, false);
   }
 
@@ -404,6 +514,7 @@
     var state = activeState();
     if (state.status !== "playing") return;
     state.current.pop();
+    persistCurrentMode();
     renderBoard(state, false);
   }
 
@@ -427,7 +538,7 @@
   // ---------- démarrage ----------
 
   dailyState = loadDaily();
-  quickState = newQuickState();
+  quickState = loadQuick();
   updateHeader();
   renderBoard(dailyState, false);
   if (dailyState.status !== "playing") lockKeypad();
