@@ -75,15 +75,35 @@
 
   function sumDigits(arr) { return arr.reduce(function (a, b) { return a + b; }, 0); }
   function evenCount(arr) { return arr.filter(function (d) { return d % 2 === 0; }).length; }
+  function spreadOf(arr) { return Math.max.apply(null, arr) - Math.min.apply(null, arr); }
+  // DOUBLONS : nombre de paires de chiffres identiques dans le code. Un chiffre répété
+  // n fois compte pour C(n,2) paires (ex: "2 2 7 2 9" -> le 2 apparaît 3 fois -> 3 paires).
+  function duplicatePairs(arr) {
+    var counts = {};
+    arr.forEach(function (d) { counts[d] = (counts[d] || 0) + 1; });
+    var pairs = 0;
+    Object.keys(counts).forEach(function (k) {
+      var c = counts[k];
+      pairs += (c * (c - 1)) / 2;
+    });
+    return pairs;
+  }
 
   function metaFor(guess, secret) {
     var gs = sumDigits(guess), ss = sumDigits(secret);
     var gp = evenCount(guess), sp = evenCount(secret);
+    var ge = spreadOf(guess), se = spreadOf(secret);
+    var gd = duplicatePairs(guess), sd = duplicatePairs(secret);
     return [
       { tag: "Σ", arrow: ss === gs ? "=" : ss > gs ? "↑" : "↓", state: ss === gs ? "ok" : "warn" },
-      { tag: "PAR", arrow: sp === gp ? "=" : sp > gp ? "↑" : "↓", state: sp === gp ? "ok" : "warn" }
+      { tag: "PAR", arrow: sp === gp ? "=" : sp > gp ? "↑" : "↓", state: sp === gp ? "ok" : "warn" },
+      { tag: "ÉCA", arrow: se === ge ? "=" : se > ge ? "↑" : "↓", state: se === ge ? "ok" : "warn" },
+      { tag: "DUP", arrow: sd === gd ? "=" : sd > gd ? "↑" : "↓", state: sd === gd ? "ok" : "warn" }
     ];
   }
+
+  // nombre de pastilles .gauge à construire par ligne, dérivé de metaFor (jamais codé en dur)
+  var META_COUNT = metaFor(new Array(CODE_LENGTH).fill(0), new Array(CODE_LENGTH).fill(0)).length;
 
   function won(feedback) { return feedback.every(function (s) { return s === "ok"; }); }
 
@@ -270,7 +290,7 @@
     var gaugesEl = document.createElement("div");
     gaugesEl.className = "gauges";
     var gaugeEls = [];
-    for (var g = 0; g < 2; g++) {
+    for (var g = 0; g < META_COUNT; g++) {
       var el = document.createElement("div");
       el.className = "gauge";
       el.dataset.state = "idle";
@@ -452,12 +472,32 @@
       }).join("");
       lines.push(tiles + " " + metaStr);
     });
+    var streakInfo = getStreak();
+    if (streakInfo.streak > 0) lines.push("🔥 Série : " + streakInfo.streak + " jours");
     var text = lines.join("\n");
-    navigator.clipboard.writeText(text).then(function () {
-      var old = btn.textContent;
-      btn.textContent = "Copié !";
-      setTimeout(function () { btn.textContent = old; }, 1600);
-    }).catch(function () {});
+
+    var oldLabel = btn.textContent;
+    function flashLabel(label) {
+      btn.textContent = label;
+      setTimeout(function () { btn.textContent = oldLabel; }, 1600);
+    }
+
+    function fallbackCopy() {
+      navigator.clipboard.writeText(text).then(function () {
+        flashLabel("Copié !");
+      }).catch(function () {});
+    }
+
+    if (navigator.share) {
+      navigator.share({ text: text }).then(function () {
+        flashLabel("Partagé !");
+      }).catch(function (err) {
+        if (err && err.name === "AbortError") { flashLabel("Annulé"); return; }
+        fallbackCopy();
+      });
+    } else {
+      fallbackCopy();
+    }
   }
 
   function updateHeader() {
