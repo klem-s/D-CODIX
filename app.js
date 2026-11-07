@@ -1,13 +1,16 @@
 (function () {
   "use strict";
 
-  var CODE_LENGTH = 5;
-  var MAX_ATTEMPTS = 8;
+  var DAILY_CODE_LENGTH = 5;
+  var DAILY_MAX_ATTEMPTS = 8;
+  var CODE_LENGTH_MIN = 3, CODE_LENGTH_MAX = 7;
+  var MAX_ATTEMPTS_MIN = 6, MAX_ATTEMPTS_MAX = 12;
   var EPOCH = Date.UTC(2026, 10, 7); // #1 le 2026-11-07 (UTC)
   var STORAGE_DAILY = "decodix_daily_v1";
   var STORAGE_STREAK = "decodix_streak_v1";
   var STORAGE_QUICK = "decodix_quick_v1";
   var STORAGE_QUICK_STATS = "decodix_quick_stats_v1";
+  var STORAGE_QUICK_SETTINGS = "decodix_quick_settings_v1";
   var STORAGE_BADGES = "decodix_badges_v1";
   var BADGE_THRESHOLDS = [3, 7, 14, 30, 100];
 
@@ -44,10 +47,18 @@
     };
   }
 
-  function makeSecret(rngFn) {
-    var digits = [];
-    for (var i = 0; i < CODE_LENGTH; i++) digits.push(Math.floor(rngFn() * 10));
-    return digits;
+  function makeSecret(rngFn, length, allowRepeats) {
+    if (allowRepeats) {
+      var digits = [];
+      for (var i = 0; i < length; i++) digits.push(Math.floor(rngFn() * 10));
+      return digits;
+    }
+    var pool = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
+    for (var i = pool.length - 1; i > 0; i--) {
+      var j = Math.floor(rngFn() * (i + 1));
+      var tmp = pool[i]; pool[i] = pool[j]; pool[j] = tmp;
+    }
+    return pool.slice(0, length);
   }
 
   function evaluateGuess(guess, secret) {
@@ -86,7 +97,7 @@
   }
 
   // nombre de pastilles .gauge à construire par ligne, dérivé de metaFor (jamais codé en dur)
-  var META_COUNT = metaFor(new Array(CODE_LENGTH).fill(0), new Array(CODE_LENGTH).fill(0)).length;
+  var META_COUNT = metaFor([0], [0]).length;
 
   function won(feedback) { return feedback.every(function (s) { return s === "ok"; }); }
 
@@ -96,19 +107,22 @@
   var quickState = null;
   var currentMode = "daily";
 
-  function freshState(secret) {
-    return { secret: secret, guesses: [], current: [], status: "playing" };
+  function freshState(secret, codeLength, maxAttempts) {
+    return { secret: secret, guesses: [], current: [], status: "playing", codeLength: codeLength, maxAttempts: maxAttempts };
   }
 
   function loadDaily() {
     var dateStr = todayUTCString();
-    var secret = makeSecret(seededRng("decodix-" + dateStr));
+    var secret = makeSecret(seededRng("decodix-" + dateStr), DAILY_CODE_LENGTH, true);
     var saved = null;
     try { saved = JSON.parse(localStorage.getItem(STORAGE_DAILY) || "null"); } catch (e) {}
     if (saved && saved.date === dateStr) {
-      return { secret: secret, guesses: saved.guesses, current: saved.current || [], status: saved.status, date: dateStr };
+      return {
+        secret: secret, guesses: saved.guesses, current: saved.current || [], status: saved.status, date: dateStr,
+        codeLength: DAILY_CODE_LENGTH, maxAttempts: DAILY_MAX_ATTEMPTS
+      };
     }
-    return Object.assign(freshState(secret), { date: dateStr });
+    return Object.assign(freshState(secret, DAILY_CODE_LENGTH, DAILY_MAX_ATTEMPTS), { date: dateStr });
   }
 
   function persistDaily() {
@@ -164,19 +178,41 @@
     return badges;
   }
 
+  function clamp(n, min, max) { return Math.min(max, Math.max(min, n)); }
+
+  function getQuickSettings() {
+    var defaults = { codeLength: DAILY_CODE_LENGTH, maxAttempts: DAILY_MAX_ATTEMPTS, allowRepeats: true };
+    try {
+      var saved = JSON.parse(localStorage.getItem(STORAGE_QUICK_SETTINGS) || "null");
+      if (!saved) return defaults;
+      return {
+        codeLength: clamp(Number(saved.codeLength) || defaults.codeLength, CODE_LENGTH_MIN, CODE_LENGTH_MAX),
+        maxAttempts: clamp(Number(saved.maxAttempts) || defaults.maxAttempts, MAX_ATTEMPTS_MIN, MAX_ATTEMPTS_MAX),
+        allowRepeats: saved.allowRepeats !== false
+      };
+    } catch (e) { return defaults; }
+  }
+
+  function saveQuickSettings(settings) {
+    try { localStorage.setItem(STORAGE_QUICK_SETTINGS, JSON.stringify(settings)); } catch (e) {}
+  }
+
   function newQuickState() {
-    return freshState(makeSecret(Math.random));
+    var cfg = getQuickSettings();
+    return freshState(makeSecret(Math.random, cfg.codeLength, cfg.allowRepeats), cfg.codeLength, cfg.maxAttempts);
   }
 
   function loadQuick() {
     var saved = null;
     try { saved = JSON.parse(localStorage.getItem(STORAGE_QUICK) || "null"); } catch (e) {}
-    if (saved && Array.isArray(saved.secret) && saved.secret.length === CODE_LENGTH) {
+    if (saved && Array.isArray(saved.secret) && saved.codeLength && saved.maxAttempts && saved.secret.length === saved.codeLength) {
       return {
         secret: saved.secret,
         guesses: saved.guesses || [],
         current: saved.current || [],
-        status: saved.status || "playing"
+        status: saved.status || "playing",
+        codeLength: saved.codeLength,
+        maxAttempts: saved.maxAttempts
       };
     }
     return newQuickState();
@@ -188,7 +224,9 @@
         secret: quickState.secret,
         guesses: quickState.guesses,
         current: quickState.current,
-        status: quickState.status
+        status: quickState.status,
+        codeLength: quickState.codeLength,
+        maxAttempts: quickState.maxAttempts
       }));
     } catch (e) {}
   }
@@ -240,6 +278,12 @@
   var badgeToastTimer = null;
   var srAnnouncerEl = document.getElementById("sr-announcer");
   var incompleteHintTimer = null;
+  var btnSettings = document.getElementById("btn-settings");
+  var settingsPanelEl = document.getElementById("settings-panel");
+  var setLengthEl = document.getElementById("set-length");
+  var setAttemptsEl = document.getElementById("set-attempts");
+  var setRepeatsEl = document.getElementById("set-repeats");
+  var setApplyEl = document.getElementById("set-apply");
 
   function activeState() { return currentMode === "daily" ? dailyState : quickState; }
 
@@ -251,7 +295,7 @@
     badgeToastTimer = setTimeout(function () { badgeToastEl.classList.remove("shown"); }, 3200);
   }
 
-  function buildRow(idxLabel) {
+  function buildRow(idxLabel, codeLength) {
     var row = document.createElement("div");
     row.className = "row";
 
@@ -262,8 +306,9 @@
 
     var digitsEl = document.createElement("div");
     digitsEl.className = "digits";
+    digitsEl.style.gridTemplateColumns = "repeat(" + codeLength + ", 1fr)";
     var slots = [];
-    for (var i = 0; i < CODE_LENGTH; i++) {
+    for (var i = 0; i < codeLength; i++) {
       var slot = document.createElement("div");
       slot.className = "slot";
       slot.dataset.state = "idle";
@@ -315,8 +360,8 @@
 
   function renderBoard(state, animateLast) {
     boardEl.innerHTML = "";
-    for (var i = 0; i < MAX_ATTEMPTS; i++) {
-      var refs = buildRow((i + 1) + ".");
+    for (var i = 0; i < state.maxAttempts; i++) {
+      var refs = buildRow((i + 1) + ".", state.codeLength);
       if (i < state.guesses.length) {
         var guess = state.guesses[i];
         var feedback = evaluateGuess(guess, state.secret);
@@ -339,7 +384,7 @@
           setGaugesFinal(refs, meta);
         }
       } else if (i === state.guesses.length && state.status === "playing") {
-        for (var s = 0; s < CODE_LENGTH; s++) {
+        for (var s = 0; s < state.codeLength; s++) {
           if (s < state.current.length) setSlotFinal(refs.slots[s], "typed", state.current[s]);
           else if (s === state.current.length) refs.slots[s].dataset.state = "cursor";
         }
@@ -453,8 +498,8 @@
 
   function lossMessage(state) {
     var best = bestOkCount(state);
-    if (best >= CODE_LENGTH - 1) return "Il ne manquait qu'un chiffre !";
-    if (best >= Math.ceil(CODE_LENGTH / 2)) return "Tu touchais presque au but !";
+    if (best >= state.codeLength - 1) return "Il ne manquait qu'un chiffre !";
+    if (best >= Math.ceil(state.codeLength / 2)) return "Tu touchais presque au but !";
     return "Pas facile, ce coffre... retente ta chance !";
   }
 
@@ -480,14 +525,14 @@
         var sorted = badges.unlocked.slice().sort(function (a, b) { return a - b; });
         badgeHtml = " <span class=\"badge-list\" title=\"Paliers débloqués : " + sorted.join(", ") + " jours\">🏅" + badges.unlocked.length + "</span>";
       }
-      statEl.innerHTML = "Essais : <b>" + state.guesses.length + "</b>/" + MAX_ATTEMPTS +
+      statEl.innerHTML = "Essais : <b>" + state.guesses.length + "</b>/" + state.maxAttempts +
         (streakInfo.streak > 0 ? " &nbsp;·&nbsp; Série : <b>" + streakInfo.streak + "</b> · Record : <b>" + (streakInfo.maxStreak || streakInfo.streak) + "</b> 🔥" + badgeHtml : "");
     } else {
       var qStats = getQuickStats();
       var winRate = qStats.played > 0 ? Math.round((qStats.wins / qStats.played) * 100) : 0;
       var avgAttempts = qStats.wins > 0 ? (qStats.totalWinAttempts / qStats.wins).toFixed(1) : "—";
       var best = qStats.bestAttempts === null ? "—" : qStats.bestAttempts;
-      statEl.innerHTML = "Essais : <b>" + state.guesses.length + "</b>/" + MAX_ATTEMPTS +
+      statEl.innerHTML = "Essais : <b>" + state.guesses.length + "</b>/" + state.maxAttempts +
         " &nbsp;·&nbsp; <b>" + qStats.played + "</b> partie" + (qStats.played === 1 ? "" : "s") +
         " · <b>" + winRate + "%</b> victoires · moy <b>" + avgAttempts + "</b> · meilleure <b>" + best + "</b>" +
         (qStats.currentStreak > 0 ? " &nbsp;·&nbsp; 🔥 <b>" + qStats.currentStreak + "</b> d'affilée" : "");
@@ -510,20 +555,22 @@
       var newBtn = document.createElement("button");
       newBtn.type = "button";
       newBtn.textContent = "Nouvelle partie";
-      newBtn.addEventListener("click", function () {
-        quickState = newQuickState();
-        persistQuick();
-        unlockKeypad();
-        renderBoard(quickState, false);
-        refreshReadout();
-      });
+      newBtn.addEventListener("click", startNewQuickGame);
       actionsEl.appendChild(newBtn);
     }
   }
 
+  function startNewQuickGame() {
+    quickState = newQuickState();
+    persistQuick();
+    unlockKeypad();
+    renderBoard(quickState, false);
+    refreshReadout();
+  }
+
   function shareResult(state, btn) {
     var no = puzzleNumber(state.date);
-    var lines = ["Décodix #" + no + " — " + (state.status === "won" ? state.guesses.length : "X") + "/" + MAX_ATTEMPTS];
+    var lines = ["Décodix #" + no + " — " + (state.status === "won" ? state.guesses.length : "X") + "/" + state.maxAttempts];
     state.guesses.forEach(function (guess) {
       var feedback = evaluateGuess(guess, state.secret);
       var tiles = feedback.map(function (s) { return s === "ok" ? "🟩" : s === "warn" ? "🟧" : "⬜"; }).join("");
@@ -576,6 +623,8 @@
     currentMode = mode;
     tabDaily.setAttribute("aria-selected", String(mode === "daily"));
     tabQuick.setAttribute("aria-selected", String(mode === "quick"));
+    btnSettings.hidden = mode !== "quick";
+    if (mode !== "quick") closeSettingsPanel();
     updateHeader();
     var state = activeState();
     (state.status === "playing") ? unlockKeypad() : lockKeypad();
@@ -583,12 +632,58 @@
     refreshReadout();
   }
 
+  // ---------- réglages du mode rapide ----------
+
+  function populateSettingsSelect(selectEl, min, max, current) {
+    selectEl.innerHTML = "";
+    for (var v = min; v <= max; v++) {
+      var opt = document.createElement("option");
+      opt.value = String(v);
+      opt.textContent = String(v);
+      if (v === current) opt.selected = true;
+      selectEl.appendChild(opt);
+    }
+  }
+
+  function fillSettingsPanel() {
+    var cfg = getQuickSettings();
+    populateSettingsSelect(setLengthEl, CODE_LENGTH_MIN, CODE_LENGTH_MAX, cfg.codeLength);
+    populateSettingsSelect(setAttemptsEl, MAX_ATTEMPTS_MIN, MAX_ATTEMPTS_MAX, cfg.maxAttempts);
+    setRepeatsEl.checked = cfg.allowRepeats;
+  }
+
+  function closeSettingsPanel() {
+    settingsPanelEl.hidden = true;
+    btnSettings.setAttribute("aria-expanded", "false");
+  }
+
+  function toggleSettingsPanel() {
+    if (settingsPanelEl.hidden) {
+      fillSettingsPanel();
+      settingsPanelEl.hidden = false;
+      btnSettings.setAttribute("aria-expanded", "true");
+    } else {
+      closeSettingsPanel();
+    }
+  }
+
+  btnSettings.addEventListener("click", toggleSettingsPanel);
+
+  setApplyEl.addEventListener("click", function () {
+    var codeLength = clamp(Number(setLengthEl.value), CODE_LENGTH_MIN, CODE_LENGTH_MAX);
+    var maxAttempts = clamp(Number(setAttemptsEl.value), MAX_ATTEMPTS_MIN, MAX_ATTEMPTS_MAX);
+    var allowRepeats = setRepeatsEl.checked;
+    saveQuickSettings({ codeLength: codeLength, maxAttempts: maxAttempts, allowRepeats: allowRepeats });
+    closeSettingsPanel();
+    startNewQuickGame();
+  });
+
   // ---------- saisie ----------
 
   function submitGuess() {
     var state = activeState();
     if (state.status !== "playing") return;
-    if (state.current.length !== CODE_LENGTH) {
+    if (state.current.length !== state.codeLength) {
       showIncompleteHint();
       shakeActiveRow();
       return;
@@ -601,7 +696,7 @@
     if (won(feedback)) {
       state.status = "won";
       if (currentMode === "daily") updateStreakOnWin(state.date);
-    } else if (state.guesses.length >= MAX_ATTEMPTS) {
+    } else if (state.guesses.length >= state.maxAttempts) {
       state.status = "lost";
     }
     announce(buildGuessAnnouncement(state.guesses.length, feedback, meta));
@@ -613,7 +708,7 @@
 
   function pressDigit(d) {
     var state = activeState();
-    if (state.status !== "playing" || state.current.length >= CODE_LENGTH) return;
+    if (state.status !== "playing" || state.current.length >= state.codeLength) return;
     state.current.push(d);
     persistCurrentMode();
     renderBoard(state, false);

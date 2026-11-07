@@ -29,6 +29,23 @@
     <div class="tabs" role="tablist" aria-label="Mode de jeu">
       <button class="tab" id="tab-daily" role="tab" aria-selected="true" type="button">Défi du jour</button>
       <button class="tab" id="tab-quick" role="tab" aria-selected="false" type="button">Mode rapide</button>
+      <button class="gear" id="btn-settings" type="button" aria-label="Réglages du mode rapide" aria-expanded="false" hidden>⚙</button>
+    </div>
+
+    <div class="settings" id="settings-panel" hidden>
+      <label>
+        <span>Longueur du code</span>
+        <select id="set-length"></select>
+      </label>
+      <label>
+        <span>Essais autorisés</span>
+        <select id="set-attempts"></select>
+      </label>
+      <label class="checkrow">
+        <input type="checkbox" id="set-repeats">
+        <span>Autoriser les chiffres répétés</span>
+      </label>
+      <button id="set-apply" type="button">Appliquer · nouvelle partie</button>
     </div>
 
     <div class="legend">
