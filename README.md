@@ -1,6 +1,6 @@
 # Décodix
 
-Un Mastermind quotidien dans l'esprit Wordle/Tusmo : devine un code secret à 5 chiffres grâce à un feedback positionnel (bien placé / présent / absent) et à quatre indices globaux de déduction (somme des chiffres, nombre de chiffres pairs, écart max-min, nombre de paires de chiffres identiques).
+Un Mastermind quotidien dans l'esprit Wordle/Tusmo : devine un code secret à 5 chiffres grâce à un feedback positionnel (bien placé / présent / absent) et à deux indices globaux de déduction (somme des chiffres, nombre de chiffres pairs).
 
 Deux modes :
 - **Défi du jour** — un seul code par jour (seed déterministe sur la date UTC), 8 essais, série de victoires conservée dans `localStorage`.

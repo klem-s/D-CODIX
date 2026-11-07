@@ -75,30 +75,13 @@
 
   function sumDigits(arr) { return arr.reduce(function (a, b) { return a + b; }, 0); }
   function evenCount(arr) { return arr.filter(function (d) { return d % 2 === 0; }).length; }
-  function spreadOf(arr) { return Math.max.apply(null, arr) - Math.min.apply(null, arr); }
-  // DOUBLONS : nombre de paires de chiffres identiques dans le code. Un chiffre répété
-  // n fois compte pour C(n,2) paires (ex: "2 2 7 2 9" -> le 2 apparaît 3 fois -> 3 paires).
-  function duplicatePairs(arr) {
-    var counts = {};
-    arr.forEach(function (d) { counts[d] = (counts[d] || 0) + 1; });
-    var pairs = 0;
-    Object.keys(counts).forEach(function (k) {
-      var c = counts[k];
-      pairs += (c * (c - 1)) / 2;
-    });
-    return pairs;
-  }
 
   function metaFor(guess, secret) {
     var gs = sumDigits(guess), ss = sumDigits(secret);
     var gp = evenCount(guess), sp = evenCount(secret);
-    var ge = spreadOf(guess), se = spreadOf(secret);
-    var gd = duplicatePairs(guess), sd = duplicatePairs(secret);
     return [
       { tag: "Σ", arrow: ss === gs ? "=" : ss > gs ? "↑" : "↓", state: ss === gs ? "ok" : "warn" },
-      { tag: "PAR", arrow: sp === gp ? "=" : sp > gp ? "↑" : "↓", state: sp === gp ? "ok" : "warn" },
-      { tag: "ÉCA", arrow: se === ge ? "=" : se > ge ? "↑" : "↓", state: se === ge ? "ok" : "warn" },
-      { tag: "DUP", arrow: sd === gd ? "=" : sd > gd ? "↑" : "↓", state: sd === gd ? "ok" : "warn" }
+      { tag: "PAR", arrow: sp === gp ? "=" : sp > gp ? "↑" : "↓", state: sp === gp ? "ok" : "warn" }
     ];
   }
 
@@ -418,7 +401,7 @@
   }
 
   var DIGIT_STATE_LABEL = { ok: "bien placé", warn: "présent mal placé", absent: "absent" };
-  var META_LABEL = { "Σ": "Somme", "PAR": "Parité", "ÉCA": "Écart", "DUP": "Doublons" };
+  var META_LABEL = { "Σ": "Somme", "PAR": "Parité" };
 
   function metaArrowLabel(arrow) {
     return arrow === "=" ? "identique" : arrow === "↑" ? "cible plus haute" : "cible plus basse";

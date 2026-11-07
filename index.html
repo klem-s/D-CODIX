@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Décodix — devine le code du jour</title>
-<meta name="description" content="Un Mastermind quotidien : devine le code secret à 5 chiffres grâce au feedback positionnel et à quatre indices globaux de déduction.">
+<meta name="description" content="Un Mastermind quotidien : devine le code secret à 5 chiffres grâce au feedback positionnel et à deux indices globaux de déduction.">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🔐</text></svg>">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=VT323&family=IBM+Plex+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -24,7 +24,7 @@
       <span id="puzzle-date">—</span>
     </div>
     <h1>DÉCODIX</h1>
-    <p class="sub">Un code à 5 chiffres se cache dans le coffre. Chaque essai révèle la position des chiffres — et quatre indices globaux de déduction.</p>
+    <p class="sub">Un code à 5 chiffres se cache dans le coffre. Chaque essai révèle la position des chiffres — et deux indices globaux de déduction.</p>
 
     <div class="tabs" role="tablist" aria-label="Mode de jeu">
       <button class="tab" id="tab-daily" role="tab" aria-selected="true" type="button">Défi du jour</button>
@@ -35,7 +35,7 @@
       <span><span class="led ok"></span>Bien placé ✓</span>
       <span><span class="led warn"></span>Présent, mal placé ◆</span>
       <span><span class="led absent"></span>Absent –</span>
-      <span><span class="led accent"></span>Σ / parité / écart / doublons</span>
+      <span><span class="led accent"></span>Σ chiffres / parité</span>
     </div>
 
     <div id="board" class="board"></div>
