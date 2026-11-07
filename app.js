@@ -16,6 +16,7 @@
   var STORAGE_BADGES = "decodix_badges_v1";
   var STORAGE_HISTORY = "decodix_history_v1";
   var STORAGE_PREFS = "decodix_prefs_v1";
+  var STORAGE_TUTORIAL_SEEN = "decodix_tutorial_seen_v1";
   var BADGE_THRESHOLDS = [3, 7, 14, 30, 100];
 
   var reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -432,6 +433,13 @@
   var historyGridEl = document.getElementById("history-grid");
   var btnSound = document.getElementById("btn-sound");
   var btnVibration = document.getElementById("btn-vibration");
+  var btnHelp = document.getElementById("btn-help");
+  var tutorialOverlayEl = document.getElementById("tutorial-overlay");
+  var tutorialStepsEl = document.getElementById("tutorial-steps");
+  var tutorialDotsEl = document.getElementById("tutorial-dots");
+  var tutorialPrevEl = document.getElementById("tutorial-prev");
+  var tutorialNextEl = document.getElementById("tutorial-next");
+  var tutorialCloseEl = document.getElementById("tutorial-close");
 
   function activeState() {
     if (currentMode === "daily") return dailyState;
@@ -1122,6 +1130,89 @@
   tabDaily.addEventListener("click", function () { switchMode("daily"); });
   tabQuick.addEventListener("click", function () { switchMode("quick"); });
   tabDuel.addEventListener("click", function () { switchMode("duel"); });
+
+  // ---------- tutoriel interactif ----------
+
+  var TUTORIAL_STEPS = [
+    {
+      title: "Devine le code",
+      body: "Chaque jour, un code secret de " + DAILY_CODE_LENGTH + " chiffres se cache dans le coffre. Tape ta proposition sur le pavé puis valide pour voir où tu en es.",
+      demo: "feedback"
+    },
+    {
+      title: "Lis les indices",
+      body: "Après chaque essai : vert ✓ = bien placé, orange ◆ = présent mais mal placé, gris – = absent. Deux jauges comparent aussi la somme (Σ) et le nombre de chiffres pairs (PAR) de ton essai au code secret.",
+      demo: "meta"
+    },
+    {
+      title: "Deux façons de jouer",
+      body: "Le Défi du jour est le même pour tout le monde, une seule fois par jour. Le Mode rapide se joue à volonté, sans classement, avec des réglages de difficulté. Bonne chance !",
+      demo: null
+    }
+  ];
+  var tutorialStepIndex = 0;
+
+  function tutorialDemoHTML(kind) {
+    if (kind === "feedback") {
+      return '<div class="tutorial-demo-row">' +
+        '<div class="slot" data-state="ok"><span class="slot-val">4</span></div>' +
+        '<div class="slot" data-state="warn"><span class="slot-val">7</span></div>' +
+        '<div class="slot" data-state="absent"><span class="slot-val">2</span></div>' +
+        '</div>';
+    }
+    if (kind === "meta") {
+      return '<div class="tutorial-demo-gauges">' +
+        '<div class="gauge" data-state="warn"><span class="tag">Σ</span><span class="arrow">↑</span></div>' +
+        '<div class="gauge" data-state="ok"><span class="tag">PAR</span><span class="arrow">=</span></div>' +
+        '</div>';
+    }
+    return "";
+  }
+
+  function renderTutorialStep() {
+    var step = TUTORIAL_STEPS[tutorialStepIndex];
+    tutorialStepsEl.innerHTML =
+      "<h3>" + step.title + "</h3>" +
+      '<p class="tutorial-body">' + step.body + "</p>" +
+      tutorialDemoHTML(step.demo);
+
+    tutorialDotsEl.innerHTML = "";
+    TUTORIAL_STEPS.forEach(function (s, i) {
+      var dot = document.createElement("span");
+      if (i === tutorialStepIndex) dot.className = "active";
+      tutorialDotsEl.appendChild(dot);
+    });
+
+    tutorialPrevEl.disabled = tutorialStepIndex === 0;
+    var isLast = tutorialStepIndex === TUTORIAL_STEPS.length - 1;
+    tutorialNextEl.textContent = isLast ? "C'est parti !" : "Suivant";
+    tutorialNextEl.classList.toggle("primary", isLast);
+  }
+
+  function openTutorial() {
+    tutorialStepIndex = 0;
+    renderTutorialStep();
+    tutorialOverlayEl.hidden = false;
+  }
+
+  function closeTutorial() {
+    tutorialOverlayEl.hidden = true;
+    try { localStorage.setItem(STORAGE_TUTORIAL_SEEN, "1"); } catch (e) {}
+  }
+
+  tutorialPrevEl.addEventListener("click", function () {
+    if (tutorialStepIndex > 0) { tutorialStepIndex--; renderTutorialStep(); }
+  });
+  tutorialNextEl.addEventListener("click", function () {
+    if (tutorialStepIndex < TUTORIAL_STEPS.length - 1) { tutorialStepIndex++; renderTutorialStep(); }
+    else closeTutorial();
+  });
+  tutorialCloseEl.addEventListener("click", closeTutorial);
+  btnHelp.addEventListener("click", openTutorial);
+
+  var tutorialSeen = false;
+  try { tutorialSeen = localStorage.getItem(STORAGE_TUTORIAL_SEEN) === "1"; } catch (e) {}
+  if (!tutorialSeen) openTutorial();
 
   // ---------- démarrage ----------
 

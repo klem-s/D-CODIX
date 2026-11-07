@@ -496,3 +496,117 @@ h1{
 .actions button:focus-visible{ outline:2px solid var(--accent); outline-offset:2px; }
 
 .note{ text-align:center; font-size:10.5px; color:var(--muted); margin:0; }
+
+.tutorial-overlay{
+  position:fixed;
+  inset:0;
+  background:rgba(0,0,0,.6);
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  padding:20px;
+  z-index:20;
+}
+.tutorial-overlay[hidden]{ display:none; }
+.tutorial-card{
+  position:relative;
+  width:100%;
+  max-width:360px;
+  max-height:90vh;
+  overflow-y:auto;
+  background:linear-gradient(180deg,var(--panel),#121318);
+  border:1px solid var(--bezel);
+  border-radius:14px;
+  padding:26px 20px 20px;
+  box-shadow:0 24px 50px -16px rgba(0,0,0,.7);
+}
+.tutorial-close{
+  position:absolute;
+  top:10px; right:10px;
+  width:26px; height:26px;
+  display:flex; align-items:center; justify-content:center;
+  background:none; border:none;
+  color:var(--muted);
+  font-size:18px;
+  line-height:1;
+  cursor:pointer;
+}
+.tutorial-close:hover{ color:var(--accent); }
+.tutorial-close:focus-visible{ outline:2px solid var(--accent); outline-offset:2px; }
+
+.tutorial-card h2{
+  font-family:'VT323',monospace;
+  font-size:24px;
+  color:var(--ok);
+  margin:0 0 14px;
+  letter-spacing:.03em;
+}
+.tutorial-card h3{
+  font-family:'IBM Plex Mono',monospace;
+  font-weight:700;
+  font-size:13px;
+  color:var(--accent);
+  text-transform:uppercase;
+  letter-spacing:.04em;
+  margin:0 0 8px;
+}
+.tutorial-body{
+  font-size:12.5px;
+  color:var(--ink);
+  line-height:1.6;
+  margin:0;
+}
+.tutorial-demo-row{
+  display:grid;
+  grid-template-columns:repeat(3,1fr);
+  gap:6px;
+  max-width:140px;
+  margin:14px auto 0;
+}
+.tutorial-demo-gauges{
+  display:flex;
+  flex-direction:row;
+  gap:8px;
+  justify-content:center;
+  margin:14px auto 0;
+  width:auto;
+}
+.tutorial-demo-gauges .gauge{ width:auto; }
+
+.tutorial-nav{
+  display:flex;
+  flex-direction:column;
+  gap:12px;
+  margin-top:20px;
+}
+.tutorial-dots{
+  display:flex;
+  justify-content:center;
+  gap:6px;
+}
+.tutorial-dots span{
+  width:6px; height:6px;
+  border-radius:50%;
+  background:var(--bezel);
+}
+.tutorial-dots span.active{ background:var(--ok); }
+.tutorial-buttons{
+  display:flex;
+  justify-content:space-between;
+  gap:10px;
+}
+.tutorial-buttons button{
+  flex:1;
+  font-family:'IBM Plex Mono',monospace;
+  font-weight:600;
+  font-size:12px;
+  border-radius:16px;
+  padding:9px 0;
+  cursor:pointer;
+  border:1.5px solid var(--bezel);
+  background:var(--slot);
+  color:var(--ink);
+}
+.tutorial-buttons button:disabled{ opacity:.35; cursor:not-allowed; }
+.tutorial-buttons button.primary{ background:var(--ok); border-color:var(--ok); color:var(--bg); }
+.tutorial-buttons button:focus-visible{ outline:2px solid var(--accent); outline-offset:2px; }
