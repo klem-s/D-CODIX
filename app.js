@@ -107,6 +107,7 @@
 
   var dailyState = null;
   var quickState = null;
+  var duelState = null;
   var currentMode = "daily";
 
   function freshState(secret, codeLength, maxAttempts) {
@@ -251,8 +252,33 @@
     } catch (e) {}
   }
 
+  function duelStorageKey(seed) { return "decodix_duel_" + seed; }
+
+  function loadDuel(seed, fromName) {
+    var secret = makeSecret(seededRng("decodix-duel-" + seed), DAILY_CODE_LENGTH, true);
+    var saved = null;
+    try { saved = JSON.parse(localStorage.getItem(duelStorageKey(seed)) || "null"); } catch (e) {}
+    return {
+      secret: secret, codeLength: DAILY_CODE_LENGTH, maxAttempts: DAILY_MAX_ATTEMPTS,
+      seed: seed, from: fromName || null,
+      guesses: (saved && saved.guesses) || [],
+      current: (saved && saved.current) || [],
+      status: (saved && saved.status) || "playing"
+    };
+  }
+
+  function persistDuel() {
+    if (!duelState) return;
+    try {
+      localStorage.setItem(duelStorageKey(duelState.seed), JSON.stringify({
+        guesses: duelState.guesses, current: duelState.current, status: duelState.status
+      }));
+    } catch (e) {}
+  }
+
   function persistCurrentMode() {
     if (currentMode === "daily") persistDaily();
+    else if (currentMode === "duel") persistDuel();
     else persistQuick();
   }
 
@@ -294,6 +320,7 @@
   var puzzleDateEl = document.getElementById("puzzle-date");
   var tabDaily = document.getElementById("tab-daily");
   var tabQuick = document.getElementById("tab-quick");
+  var tabDuel = document.getElementById("tab-duel");
   var badgeToastEl = document.getElementById("badge-toast");
   var badgeToastTimer = null;
   var srAnnouncerEl = document.getElementById("sr-announcer");
@@ -309,7 +336,11 @@
   var setApplyEl = document.getElementById("set-apply");
   var timerEl = document.getElementById("timer");
 
-  function activeState() { return currentMode === "daily" ? dailyState : quickState; }
+  function activeState() {
+    if (currentMode === "daily") return dailyState;
+    if (currentMode === "duel") return duelState;
+    return quickState;
+  }
 
   function showBadgeToast(threshold) {
     if (!badgeToastEl) return;
@@ -552,6 +583,8 @@
       }
       statEl.innerHTML = "Essais : <b>" + state.guesses.length + "</b>/" + state.maxAttempts +
         (streakInfo.streak > 0 ? " &nbsp;·&nbsp; Série : <b>" + streakInfo.streak + "</b> · Record : <b>" + (streakInfo.maxStreak || streakInfo.streak) + "</b> 🔥" + badgeHtml : "");
+    } else if (currentMode === "duel") {
+      statEl.innerHTML = "Essais : <b>" + state.guesses.length + "</b>/" + state.maxAttempts + " &nbsp;·&nbsp; défi à deux, hors classement";
     } else {
       var qStats = getQuickStats();
       var winRate = qStats.played > 0 ? Math.round((qStats.wins / qStats.played) * 100) : 0;
@@ -568,7 +601,7 @@
 
   function renderActions(state) {
     actionsEl.innerHTML = "";
-    if (currentMode === "daily") {
+    if (currentMode === "daily" || currentMode === "duel") {
       if (state.status !== "playing") {
         var shareBtn = document.createElement("button");
         shareBtn.type = "button";
@@ -582,6 +615,12 @@
       newBtn.textContent = "Nouvelle partie";
       newBtn.addEventListener("click", startNewQuickGame);
       actionsEl.appendChild(newBtn);
+
+      var challengeBtn = document.createElement("button");
+      challengeBtn.type = "button";
+      challengeBtn.textContent = "Défier un ami";
+      challengeBtn.addEventListener("click", function () { challengeFriend(challengeBtn); });
+      actionsEl.appendChild(challengeBtn);
     }
   }
 
@@ -594,22 +633,7 @@
     tickTimer();
   }
 
-  function shareResult(state, btn) {
-    var no = puzzleNumber(state.date);
-    var lines = ["Décodix #" + no + " — " + (state.status === "won" ? state.guesses.length : "X") + "/" + state.maxAttempts];
-    state.guesses.forEach(function (guess) {
-      var feedback = evaluateGuess(guess, state.secret);
-      var tiles = feedback.map(function (s) { return s === "ok" ? "🟩" : s === "warn" ? "🟧" : "⬜"; }).join("");
-      var meta = metaFor(guess, state.secret);
-      var metaStr = meta.map(function (m) {
-        return m.arrow === "=" ? "✅" : m.arrow === "↑" ? "⬆️" : "⬇️";
-      }).join("");
-      lines.push(tiles + " " + metaStr);
-    });
-    var streakInfo = getStreak();
-    if (streakInfo.streak > 0) lines.push("🔥 Série : " + streakInfo.streak + " jours");
-    var text = lines.join("\n");
-
+  function shareText(text, btn, shareLabel, copyLabel) {
     var oldLabel = btn.textContent;
     function flashLabel(label) {
       btn.textContent = label;
@@ -618,13 +642,13 @@
 
     function fallbackCopy() {
       navigator.clipboard.writeText(text).then(function () {
-        flashLabel("Copié !");
+        flashLabel(copyLabel);
       }).catch(function () {});
     }
 
     if (navigator.share) {
       navigator.share({ text: text }).then(function () {
-        flashLabel("Partagé !");
+        flashLabel(shareLabel);
       }).catch(function (err) {
         if (err && err.name === "AbortError") { flashLabel("Annulé"); return; }
         fallbackCopy();
@@ -634,11 +658,61 @@
     }
   }
 
+  function shareResult(state, btn) {
+    var lines;
+    if (state.seed) {
+      lines = ["Décodix · Duel" + (state.from ? " de " + state.from : "") + " — " +
+        (state.status === "won" ? state.guesses.length : "X") + "/" + state.maxAttempts];
+    } else {
+      lines = ["Décodix #" + puzzleNumber(state.date) + " — " +
+        (state.status === "won" ? state.guesses.length : "X") + "/" + state.maxAttempts];
+    }
+    state.guesses.forEach(function (guess) {
+      var feedback = evaluateGuess(guess, state.secret);
+      var tiles = feedback.map(function (s) { return s === "ok" ? "🟩" : s === "warn" ? "🟧" : "⬜"; }).join("");
+      var meta = metaFor(guess, state.secret);
+      var metaStr = meta.map(function (m) {
+        return m.arrow === "=" ? "✅" : m.arrow === "↑" ? "⬆️" : "⬇️";
+      }).join("");
+      lines.push(tiles + " " + metaStr);
+    });
+    if (state.seed) {
+      lines.push("🔗 " + buildDuelUrl(state.seed, null));
+    } else {
+      var streakInfo = getStreak();
+      if (streakInfo.streak > 0) lines.push("🔥 Série : " + streakInfo.streak + " jours");
+    }
+    shareText(lines.join("\n"), btn, "Partagé !", "Copié !");
+  }
+
+  function makeRandomSeed() {
+    return Math.random().toString(36).slice(2, 8) + Date.now().toString(36).slice(-4);
+  }
+
+  function buildDuelUrl(seed, fromName) {
+    var url = new URL(location.href);
+    url.search = "";
+    url.searchParams.set("duel", seed);
+    if (fromName) url.searchParams.set("from", fromName);
+    return url.toString();
+  }
+
+  function challengeFriend(btn) {
+    var name = (window.prompt("Ton prénom pour le défi (optionnel) :", "") || "").trim().slice(0, 24);
+    var url = buildDuelUrl(makeRandomSeed(), name);
+    var text = (name ? name + " te défie sur Décodix ! " : "Défi Décodix ! ") +
+      "Même code secret, qui le trouve en moins d'essais ?\n" + url;
+    shareText(text, btn, "Lien partagé !", "Lien copié !");
+  }
+
   function updateHeader() {
     if (currentMode === "daily") {
       puzzleNoEl.textContent = "Défi du jour · #" + puzzleNumber(dailyState.date);
       var d = new Date(dailyState.date + "T00:00:00Z");
       puzzleDateEl.textContent = d.toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit", year: "numeric" });
+    } else if (currentMode === "duel") {
+      puzzleNoEl.textContent = duelState.from ? "Duel · de " + duelState.from : "Duel entre amis";
+      puzzleDateEl.textContent = "défi partagé";
     } else {
       puzzleNoEl.textContent = "Mode rapide";
       puzzleDateEl.textContent = "partie libre";
@@ -649,6 +723,7 @@
     currentMode = mode;
     tabDaily.setAttribute("aria-selected", String(mode === "daily"));
     tabQuick.setAttribute("aria-selected", String(mode === "quick"));
+    tabDuel.setAttribute("aria-selected", String(mode === "duel"));
     btnSettings.hidden = mode !== "quick";
     if (mode !== "quick") closeSettingsPanel();
     updateHeader();
@@ -858,13 +933,30 @@
 
   tabDaily.addEventListener("click", function () { switchMode("daily"); });
   tabQuick.addEventListener("click", function () { switchMode("quick"); });
+  tabDuel.addEventListener("click", function () { switchMode("duel"); });
 
   // ---------- démarrage ----------
 
   dailyState = loadDaily();
   quickState = loadQuick();
+
+  var urlParams = new URLSearchParams(location.search);
+  var duelSeed = urlParams.get("duel");
+  var startMode = "daily";
+  if (duelSeed) {
+    duelState = loadDuel(duelSeed, urlParams.get("from"));
+    tabDuel.hidden = false;
+    startMode = "duel";
+  }
+
+  currentMode = startMode;
+  tabDaily.setAttribute("aria-selected", String(startMode === "daily"));
+  tabQuick.setAttribute("aria-selected", String(startMode === "quick"));
+  tabDuel.setAttribute("aria-selected", String(startMode === "duel"));
+  btnSettings.hidden = startMode !== "quick";
   updateHeader();
-  renderBoard(dailyState, false);
-  if (dailyState.status !== "playing") lockKeypad();
+  var startState = activeState();
+  renderBoard(startState, false);
+  if (startState.status !== "playing") lockKeypad();
   refreshReadout();
 })();
