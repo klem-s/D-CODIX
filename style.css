@@ -64,12 +64,22 @@ body{
 .eyebrow{
   display:flex;
   justify-content:space-between;
+  gap:8px;
   font-size:10.5px;
   letter-spacing:.08em;
   color:var(--muted);
   text-transform:uppercase;
   margin-bottom:6px;
 }
+.timer{
+  font-family:'VT323',monospace;
+  font-size:15px;
+  letter-spacing:.04em;
+  color:var(--accent);
+  text-shadow:0 0 8px rgba(79,214,232,.5);
+}
+.timer[hidden]{ display:none; }
+.timer.low{ color:var(--danger); text-shadow:0 0 8px rgba(232,87,79,.5); animation:blink 1s step-start infinite; }
 h1{
   font-family:'VT323',monospace;
   font-size:40px;

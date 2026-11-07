@@ -22,6 +22,7 @@
     <div class="eyebrow">
       <span id="puzzle-no">Défi du jour · #—</span>
       <span id="puzzle-date">—</span>
+      <span id="timer" class="timer" hidden></span>
     </div>
     <h1>DÉCODIX</h1>
     <p class="sub">Un code à 5 chiffres se cache dans le coffre. Chaque essai révèle la position des chiffres — et deux indices globaux de déduction.</p>
@@ -44,6 +45,14 @@
       <label class="checkrow">
         <input type="checkbox" id="set-repeats">
         <span>Autoriser les chiffres répétés</span>
+      </label>
+      <label class="checkrow">
+        <input type="checkbox" id="set-timed">
+        <span>Mode chronométré</span>
+      </label>
+      <label id="set-timelimit-row">
+        <span>Temps imparti</span>
+        <select id="set-timelimit"></select>
       </label>
       <button id="set-apply" type="button">Appliquer · nouvelle partie</button>
     </div>

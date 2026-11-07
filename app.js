@@ -5,6 +5,8 @@
   var DAILY_MAX_ATTEMPTS = 8;
   var CODE_LENGTH_MIN = 3, CODE_LENGTH_MAX = 7;
   var MAX_ATTEMPTS_MIN = 6, MAX_ATTEMPTS_MAX = 12;
+  var TIME_LIMIT_OPTIONS = [60, 90, 120, 180, 300];
+  var TIME_LIMIT_DEFAULT = 120;
   var EPOCH = Date.UTC(2026, 10, 7); // #1 le 2026-11-07 (UTC)
   var STORAGE_DAILY = "decodix_daily_v1";
   var STORAGE_STREAK = "decodix_streak_v1";
@@ -181,14 +183,19 @@
   function clamp(n, min, max) { return Math.min(max, Math.max(min, n)); }
 
   function getQuickSettings() {
-    var defaults = { codeLength: DAILY_CODE_LENGTH, maxAttempts: DAILY_MAX_ATTEMPTS, allowRepeats: true };
+    var defaults = {
+      codeLength: DAILY_CODE_LENGTH, maxAttempts: DAILY_MAX_ATTEMPTS, allowRepeats: true,
+      timed: false, timeLimit: TIME_LIMIT_DEFAULT
+    };
     try {
       var saved = JSON.parse(localStorage.getItem(STORAGE_QUICK_SETTINGS) || "null");
       if (!saved) return defaults;
       return {
         codeLength: clamp(Number(saved.codeLength) || defaults.codeLength, CODE_LENGTH_MIN, CODE_LENGTH_MAX),
         maxAttempts: clamp(Number(saved.maxAttempts) || defaults.maxAttempts, MAX_ATTEMPTS_MIN, MAX_ATTEMPTS_MAX),
-        allowRepeats: saved.allowRepeats !== false
+        allowRepeats: saved.allowRepeats !== false,
+        timed: saved.timed === true,
+        timeLimit: TIME_LIMIT_OPTIONS.indexOf(Number(saved.timeLimit)) !== -1 ? Number(saved.timeLimit) : defaults.timeLimit
       };
     } catch (e) { return defaults; }
   }
@@ -199,7 +206,12 @@
 
   function newQuickState() {
     var cfg = getQuickSettings();
-    return freshState(makeSecret(Math.random, cfg.codeLength, cfg.allowRepeats), cfg.codeLength, cfg.maxAttempts);
+    var state = freshState(makeSecret(Math.random, cfg.codeLength, cfg.allowRepeats), cfg.codeLength, cfg.maxAttempts);
+    state.timed = cfg.timed;
+    state.timeLimit = cfg.timeLimit;
+    state.startedAt = cfg.timed ? Date.now() : null;
+    state.timedOut = false;
+    return state;
   }
 
   function loadQuick() {
@@ -212,7 +224,11 @@
         current: saved.current || [],
         status: saved.status || "playing",
         codeLength: saved.codeLength,
-        maxAttempts: saved.maxAttempts
+        maxAttempts: saved.maxAttempts,
+        timed: saved.timed === true,
+        timeLimit: saved.timeLimit || TIME_LIMIT_DEFAULT,
+        startedAt: saved.startedAt || null,
+        timedOut: saved.timedOut === true
       };
     }
     return newQuickState();
@@ -226,7 +242,11 @@
         current: quickState.current,
         status: quickState.status,
         codeLength: quickState.codeLength,
-        maxAttempts: quickState.maxAttempts
+        maxAttempts: quickState.maxAttempts,
+        timed: quickState.timed,
+        timeLimit: quickState.timeLimit,
+        startedAt: quickState.startedAt,
+        timedOut: quickState.timedOut
       }));
     } catch (e) {}
   }
@@ -283,7 +303,11 @@
   var setLengthEl = document.getElementById("set-length");
   var setAttemptsEl = document.getElementById("set-attempts");
   var setRepeatsEl = document.getElementById("set-repeats");
+  var setTimedEl = document.getElementById("set-timed");
+  var setTimeLimitEl = document.getElementById("set-timelimit");
+  var setTimeLimitRow = document.getElementById("set-timelimit-row");
   var setApplyEl = document.getElementById("set-apply");
+  var timerEl = document.getElementById("timer");
 
   function activeState() { return currentMode === "daily" ? dailyState : quickState; }
 
@@ -511,7 +535,8 @@
       statusEl.textContent = "ACCÈS AUTORISÉ";
       statusEl.classList.add("win", "shown");
     } else if (state.status === "lost") {
-      statusEl.textContent = lossMessage(state) + " — " + state.secret.join("");
+      var msg = state.timedOut ? "⏱ Temps écoulé !" : lossMessage(state);
+      statusEl.textContent = msg + " — " + state.secret.join("");
       statusEl.classList.add("lose", "shown");
     } else {
       statusEl.classList.remove("shown");
@@ -566,6 +591,7 @@
     unlockKeypad();
     renderBoard(quickState, false);
     refreshReadout();
+    tickTimer();
   }
 
   function shareResult(state, btn) {
@@ -630,6 +656,7 @@
     (state.status === "playing") ? unlockKeypad() : lockKeypad();
     renderBoard(state, false);
     refreshReadout();
+    tickTimer();
   }
 
   // ---------- réglages du mode rapide ----------
@@ -645,12 +672,30 @@
     }
   }
 
+  function populateTimeLimitSelect(selectEl, current) {
+    selectEl.innerHTML = "";
+    TIME_LIMIT_OPTIONS.forEach(function (secs) {
+      var opt = document.createElement("option");
+      opt.value = String(secs);
+      opt.textContent = (secs < 60 ? secs + "s" : (secs / 60) + " min");
+      if (secs === current) opt.selected = true;
+      selectEl.appendChild(opt);
+    });
+  }
+
   function fillSettingsPanel() {
     var cfg = getQuickSettings();
     populateSettingsSelect(setLengthEl, CODE_LENGTH_MIN, CODE_LENGTH_MAX, cfg.codeLength);
     populateSettingsSelect(setAttemptsEl, MAX_ATTEMPTS_MIN, MAX_ATTEMPTS_MAX, cfg.maxAttempts);
     setRepeatsEl.checked = cfg.allowRepeats;
+    setTimedEl.checked = cfg.timed;
+    populateTimeLimitSelect(setTimeLimitEl, cfg.timeLimit);
+    setTimeLimitRow.hidden = !cfg.timed;
   }
+
+  setTimedEl.addEventListener("change", function () {
+    setTimeLimitRow.hidden = !setTimedEl.checked;
+  });
 
   function closeSettingsPanel() {
     settingsPanelEl.hidden = true;
@@ -673,10 +718,47 @@
     var codeLength = clamp(Number(setLengthEl.value), CODE_LENGTH_MIN, CODE_LENGTH_MAX);
     var maxAttempts = clamp(Number(setAttemptsEl.value), MAX_ATTEMPTS_MIN, MAX_ATTEMPTS_MAX);
     var allowRepeats = setRepeatsEl.checked;
-    saveQuickSettings({ codeLength: codeLength, maxAttempts: maxAttempts, allowRepeats: allowRepeats });
+    var timed = setTimedEl.checked;
+    var timeLimit = clamp(Number(setTimeLimitEl.value) || TIME_LIMIT_DEFAULT, TIME_LIMIT_OPTIONS[0], TIME_LIMIT_OPTIONS[TIME_LIMIT_OPTIONS.length - 1]);
+    saveQuickSettings({ codeLength: codeLength, maxAttempts: maxAttempts, allowRepeats: allowRepeats, timed: timed, timeLimit: timeLimit });
     closeSettingsPanel();
     startNewQuickGame();
   });
+
+  // ---------- mode chronométré ----------
+
+  function formatSeconds(s) {
+    s = Math.max(0, Math.ceil(s));
+    var m = Math.floor(s / 60), r = s % 60;
+    return m + ":" + (r < 10 ? "0" : "") + r;
+  }
+
+  function timeRemaining(state) {
+    return state.timeLimit - (Date.now() - state.startedAt) / 1000;
+  }
+
+  function tickTimer() {
+    if (currentMode !== "quick" || !quickState.timed || quickState.status !== "playing") {
+      timerEl.hidden = true;
+      return;
+    }
+    var remaining = timeRemaining(quickState);
+    if (remaining <= 0) {
+      quickState.status = "lost";
+      quickState.timedOut = true;
+      updateQuickStatsOnEnd(quickState);
+      persistQuick();
+      lockKeypad();
+      renderBoard(quickState, false);
+      refreshReadout();
+      return;
+    }
+    timerEl.hidden = false;
+    timerEl.textContent = "⏱ " + formatSeconds(remaining);
+    timerEl.classList.toggle("low", remaining <= 10);
+  }
+
+  setInterval(tickTimer, 1000);
 
   // ---------- saisie ----------
 
